@@ -107,30 +107,39 @@ local function send_text(text)
 		return
 	end
 
-	-- [[ NEW LOGIC: FALLBACK GUARD ]] --
 	local ft = vim.bo.filetype
 	local is_configured = config.repls[ft] ~= nil
 
-	-- If this is a new terminal AND we don't have a configured command for this filetype,
-	-- we assume we opened a raw shell (bash/zsh).
-	-- We do NOT send the text, because the user likely needs to start a REPL manually first.
 	if is_new and not is_configured then
 		return
 	end
-	-- [[ END NEW LOGIC ]] --
 
-	local clean = vim.trim(text)
+	-- 1. Remove ONLY trailing whitespace/newlines (keep leading indent!)
+	local clean = text:gsub("%s+$", "")
 	if clean == "" then
 		return
 	end
 
-	local payload = clean .. "\n"
+	-- 2. Smart Enter Logic
+	-- Split by newline to check the last line
+	local lines = vim.split(clean, "\n")
+	local last_line = lines[#lines] or ""
+
+	-- If the last line is indented (starts with space/tab), we need two Enters.
+	-- Otherwise (closed block), we only need one.
+	local ending = "\n"
+	if last_line:match("^%s+") then
+		ending = "\n\n"
+	end
+
+	-- 3. Bracketed Paste Construction
+	-- \27[200~ ... \27[201~ protects the indentation and empty lines inside
+	local payload = "\27[200~" .. clean .. "\27[201~" .. ending
 
 	if is_new then
-		-- Wait for REPL startup if it's new
 		vim.defer_fn(function()
 			vim.api.nvim_chan_send(job_id, payload)
-		end, 1000)
+		end, 500)
 	else
 		vim.api.nvim_chan_send(job_id, payload)
 	end
