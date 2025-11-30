@@ -1,11 +1,25 @@
 local M = {}
 
+-- [[ Configuration ]] --
 local config = {
-	-- This ensures the profile is passed via args, not hardcoded strings
-	ipython_args = { "--profile", "nvim" },
+	repls = {
+		-- Python: Default to the robust 'uv' workflow
+		python = {
+			cmd = "uv",
+			args = { "run", "--with", "ipython", "--", "ipython", "--profile", "nvim" },
+			ensure_ipython_profile = true,
+		},
+		-- Other Defaults
+		lua = { cmd = "lua", args = {} },
+		sh = { cmd = "bash", args = {} },
+		r = { cmd = "R", args = {} },
+		julia = { cmd = "julia", args = {} },
+		javascript = { cmd = "node", args = {} },
+		typescript = { cmd = "ts-node", args = {} },
+	},
 }
 
--- [[ Helper: Auto-create Profile ]] --
+-- [[ Helper: Auto-create Python Profile ]] --
 local function ensure_ipython_profile()
 	local home = os.getenv("HOME")
 	local profile_dir = home .. "/.ipython/profile_nvim"
@@ -27,53 +41,55 @@ c.TerminalInteractiveShell.confirm_exit = False
 		if f then
 			f:write(content)
 			f:close()
-			vim.notify("Created IPython 'nvim' profile", vim.log.levels.INFO)
 		end
 	end
 end
 
+-- [[ Helper: Construct Command ]] --
+local function get_repl_command()
+	local ft = vim.bo.filetype
+	local def = config.repls[ft]
+
+	-- 1. If no config for this filetype, fallback to default shell
+	if not def then
+		return vim.o.shell
+	end
+
+	-- 2. Handle Side Effects
+	if def.ensure_ipython_profile then
+		ensure_ipython_profile()
+	end
+
+	-- 3. Construct command
+	local cmd_str = def.cmd
+	if def.args and #def.args > 0 then
+		cmd_str = cmd_str .. " " .. table.concat(def.args, " ")
+	end
+
+	return cmd_str
+end
+
 -- [[ Helper: Find or Create Terminal ]] --
 local function get_repl_job_id()
+	-- Search for existing terminal
 	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
 		local buf = vim.api.nvim_win_get_buf(win)
 		if vim.bo[buf].buftype == "terminal" then
-			return vim.b[buf].terminal_job_id, false
+			return vim.b[buf].terminal_job_id, false -- existing
 		end
 	end
 
+	-- Create split and start terminal
 	vim.cmd("vsplit | wincmd L")
-
-	local cmd = vim.o.shell
-
-	-- Check for UV project
-	if vim.fn.executable("uv") == 1 and vim.fn.findfile("pyproject.toml", ".;") ~= "" then
-		-- Prepare arguments from config
-		local args = config.ipython_args
-		if type(args) == "table" then
-			args = table.concat(args, " ")
-		end
-
-		-- Check if IPython exists in the current venv
-		if os.execute("uv run -- which ipython > /dev/null 2>&1") == 0 then
-			-- It exists: Run directly
-			-- Note: We use '--' to separate UV flags from IPython flags
-			cmd = "uv run -- ipython " .. args
-		else
-			-- It does not exist: Use --with to install it ephemerally
-			cmd = "uv run --with ipython -- ipython " .. args
-		end
-	end -- <--- This 'end' was missing in your snippet
-
+	local cmd = get_repl_command()
 	vim.cmd("terminal " .. cmd)
 
-	-- [[ Auto-close logic ]] --
+	-- Auto-close logic
 	local term_buf = vim.api.nvim_get_current_buf()
 	vim.api.nvim_create_autocmd("TermClose", {
 		buffer = term_buf,
 		callback = function()
-			-- If process exited cleanly (status 0), close the window
 			if vim.v.event.status == 0 then
-				-- pcall ensures we don't error if the window is already tricky to close
 				vim.cmd("bdelete! " .. term_buf)
 			end
 		end,
@@ -81,7 +97,7 @@ local function get_repl_job_id()
 
 	local job_id = vim.b.terminal_job_id
 	vim.cmd("wincmd p")
-	return job_id, true
+	return job_id, true -- new
 end
 
 -- [[ Send/Toggle Functions ]] --
@@ -91,6 +107,18 @@ local function send_text(text)
 		return
 	end
 
+	-- [[ NEW LOGIC: FALLBACK GUARD ]] --
+	local ft = vim.bo.filetype
+	local is_configured = config.repls[ft] ~= nil
+
+	-- If this is a new terminal AND we don't have a configured command for this filetype,
+	-- we assume we opened a raw shell (bash/zsh).
+	-- We do NOT send the text, because the user likely needs to start a REPL manually first.
+	if is_new and not is_configured then
+		return
+	end
+	-- [[ END NEW LOGIC ]] --
+
 	local clean = vim.trim(text)
 	if clean == "" then
 		return
@@ -99,13 +127,11 @@ local function send_text(text)
 	local payload = clean .. "\n"
 
 	if is_new then
-		-- If we just created the terminal, wait 1000ms (1s) for IPython to boot
-		-- You can adjust this number (e.g., 500, 800) if your machine is faster
+		-- Wait for REPL startup if it's new
 		vim.defer_fn(function()
 			vim.api.nvim_chan_send(job_id, payload)
-		end, 500)
+		end, 1000)
 	else
-		-- Otherwise send immediately
 		vim.api.nvim_chan_send(job_id, payload)
 	end
 end
@@ -137,7 +163,6 @@ function M.toggle_repl()
 			break
 		end
 	end
-
 	if repl_win then
 		if vim.api.nvim_get_current_win() == repl_win then
 			vim.cmd("wincmd p")
@@ -154,7 +179,6 @@ end
 
 -- [[ Setup ]] --
 function M.setup(opts)
-	ensure_ipython_profile()
 	config = vim.tbl_deep_extend("force", config, opts or {})
 end
 
