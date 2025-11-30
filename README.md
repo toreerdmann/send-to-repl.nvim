@@ -10,7 +10,7 @@ It works the same for any language (that has a repl).
 
 ## Requirements
 
-* Neovim >= 0.9
+* Neovim >= 0.11
 * If using with python: [uv](https://github.com/astral-sh/uv) installed on your system. You can also configure it to use python3 to start the repl outside of a virtual environment.
 
 ##  Installation
@@ -28,15 +28,40 @@ This plugin does not set default keymaps, so you should define them in the `keys
     { "<leader>p", function() require("send-to-repl").send_word() end, desc = "Send word to REPL" },
     { "<leader><CR>", function() require("send-to-repl").send_paragraph() end, desc = "Send paragraph to REPL" },
     { "<leader><CR>", function() require("send-to-repl").send_visual() end, mode = "v", desc = "Send selection to REPL" },
-    { "<C-[>", function() require("send-to-repl").toggle_repl() end, mode = { "n", "t" }, desc = "Toggle REPL" },
   },
+  config = function()
+
+    -- use this to jump back and forth between the left and right panes
+    vim.keymap.set("t", "<C-]>", "<C-\\><C-N><C-w>w")
+    vim.keymap.set("i", "<C-]>", "<C-\\><C-N><C-w>wa")
+    vim.keymap.set("n", "<C-]>", "<C-w>wa")
+
+  end
 }
+```
 
-## Configuration
+In case the `C-l` mapping is overwritten by LazyVim's definition, you can overwrite it by adding
+this to the `config/keymaps.lua` file (assuming the standard LazyVim folder structure):
 
-  Here are some other options:
+```lua
+local has_repl, repl = pcall(require, "send-to-repl")
+if has_repl then
+  vim.keymap.set("n", "<leader>l", repl.send_line, { desc = "Send line to REPL" })
+  vim.keymap.set("n", "<leader>p", repl.send_word, { desc = "Send word to REPL" })
+  vim.keymap.set("n", "<leader><CR>", repl.send_paragraph, { desc = "Send paragraph to REPL" })
+  vim.keymap.set("v", "<leader><CR>", repl.send_visual, { desc = "Send selection to REPL" })
+  vim.keymap.set("t", "<C-]>", "<C-\\><C-N><C-w>w")
+  vim.keymap.set("i", "<C-]>", "<C-\\><C-N><C-w>wa")
+  vim.keymap.set("n", "<C-]>", "<C-w>wa")
+end
+```
 
-  ```lua
+
+### Configuration
+
+Here are some other options:
+
+```lua
 {
   "your-name/send-to-repl.nvim",
   opts = {
@@ -53,8 +78,6 @@ This plugin does not set default keymaps, so you should define them in the `keys
     }
   }
 }
-```
-```
 ```
 
 
