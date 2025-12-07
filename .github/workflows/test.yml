@@ -1,0 +1,37 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installs 'uv' so your 'uv run' command works in the plugin
+      - uses: astral-sh/setup-uv@v5
+
+      # Installs the latest stable Neovim
+      - name: Setup Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      # Mirrors your local 'vendor/plenary.nvim' setup
+      - name: Install dependencies (Plenary)
+        run: |
+          mkdir -p vendor
+          git clone --depth 1 https://github.com/nvim-lua/plenary.nvim vendor/plenary.nvim
+
+      - name: Setup Python & Dependencies
+        run: |
+          uv run --with ipython ipython -c "1+1"
+
+      # Runs the tests using your specific minimal_init and math_spec
+      - name: Run Tests
+        run: |
+          nvim --headless --noplugin -u tests/minimal_init.lua -c "PlenaryBustedFile tests/tests.lua"
+

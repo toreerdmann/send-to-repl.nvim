@@ -7,6 +7,7 @@ For python, it automatically detects your project environment, handles IPython p
 
 It works the same for any language (that has a repl).
 
+![Demo](demo.gif)
 
 ## Requirements
 
