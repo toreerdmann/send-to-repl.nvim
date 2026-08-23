@@ -1,10 +1,12 @@
-local plenary_dir = "/tmp/plenary.nvim"
 local plugin_dir = vim.fn.getcwd()
+local plenary_dir = plugin_dir .. "/vendor/plenary.nvim"
 
--- 1. Auto-download plenary if missing
+-- 1. Check vendor directory first, then /tmp
 if vim.fn.isdirectory(plenary_dir) == 0 then
-	print("Cloning plenary.nvim to /tmp...")
-	vim.fn.system({ "git", "clone", "https://github.com/nvim-lua/plenary.nvim", plenary_dir })
+	plenary_dir = "/tmp/plenary.nvim"
+	if vim.fn.isdirectory(plenary_dir) == 0 then
+		vim.fn.system({ "git", "clone", "--depth", "1", "https://github.com/nvim-lua/plenary.nvim", plenary_dir })
+	end
 end
 
 -- 2. Add paths to Neovim runtime

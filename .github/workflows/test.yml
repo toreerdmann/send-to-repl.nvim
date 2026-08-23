@@ -29,6 +29,10 @@ jobs:
         with:
           version: "latest"
 
+      - name: Pre-warm IPython with uv
+        run: |
+          uv run --with ipython python -c "import IPython; print('IPython ready')"
+
       - name: Run Tests
         run: |
           ./scripts/run_tests.sh
