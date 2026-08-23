@@ -2,6 +2,9 @@
 # Exit immediately if a command exits with a non-zero status, and fail pipeline
 set -euo pipefail
 
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_DIR"
+
 echo "--- 1. Checking Environment ---"
 
 # Check for Neovim
@@ -30,4 +33,4 @@ fi
 echo "--- 3. Running Tests ---"
 
 # Execute the same command used in CI
-nvim --headless --noplugin -u tests/minimal_init.lua -c "PlenaryBustedFile tests/tests.lua"
+XDG_CONFIG_HOME=/tmp XDG_DATA_HOME=/tmp nvim --headless --clean -u tests/minimal_init.lua -c "PlenaryBustedFile tests/tests.lua"

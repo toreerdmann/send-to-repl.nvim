@@ -1,0 +1,126 @@
+*send-to-repl.txt*      Send text and code to REPL in Neovim
+
+==============================================================================
+CONTENTS                                                  *send-to-repl-contents*
+
+    1. Introduction .............................. |send-to-repl-intro|
+    2. Requirements .............................. |send-to-repl-requirements|
+    3. Setup & Configuration ..................... |send-to-repl-configuration|
+    4. Lua API ................................... |send-to-repl-lua-api|
+    5. User Commands ............................. |send-to-repl-commands|
+    6. Suggested Keymaps ......................... |send-to-repl-keymaps|
+
+==============================================================================
+1. INTRODUCTION                                            *send-to-repl-intro*
+
+send-to-repl.nvim is a lightweight plugin that sends lines, words, paragraphs,
+code cells (# %%), visual selections, and whole files directly to a native
+terminal REPL without clobbering user registers or requiring external multiplexers.
+
+==============================================================================
+2. REQUIREMENTS                                     *send-to-repl-requirements*
+
+- Neovim >= 0.10.0 (0.11+ recommended)
+- For Python: `uv` (default) or `python3` / `ipython`
+
+==============================================================================
+3. SETUP & CONFIGURATION                           *send-to-repl-configuration*
+
+Call setup with optional table: >lua
+    require("send-to-repl").setup({
+        layout = {
+            split = "vertical", -- "vertical" | "horizontal" | "tab"
+            size = 0.4,         -- 0.4 (40%) or absolute column/line count
+        },
+        bracketed_paste = true,
+        wait_for_prompt = true,
+        cell_marker = "^%s*#%s*%%%%", -- or table of filetype -> pattern
+        repls = {
+            python = {
+                cmd = "uv",
+                args = { "run", "--with", "ipython", "--", "ipython", "--profile", "nvim" },
+                ensure_ipython_profile = true,
+            },
+            r = { cmd = "R", args = { "--no-save", "--quiet" } },
+            julia = { cmd = "julia", args = {} },
+            lua = { cmd = "lua", args = {} },
+        }
+    })
+<
+
+==============================================================================
+4. LUA API                                               *send-to-repl-lua-api*
+
+require("send-to-repl").send_line()
+    Sends current line to the REPL.
+
+require("send-to-repl").send_word()
+    Sends word under cursor to the REPL without touching user registers.
+
+require("send-to-repl").send_paragraph()
+    Sends paragraph under cursor to the REPL without touching user registers.
+
+require("send-to-repl").send_visual()
+    Sends visually selected text to the REPL without touching user registers.
+
+require("send-to-repl").send_cell()
+    Sends current code cell delimited by `# %%`, `##`, etc.
+
+require("send-to-repl").send_file() / send_buffer()
+    Sends entire buffer contents to the REPL.
+
+require("send-to-repl").send_range(line1, line2)
+    Sends lines from line1 to line2.
+
+require("send-to-repl").send_operator(type)
+    Operatorfunc to use with motions (e.g. `gxcip`).
+
+require("send-to-repl").send(text)
+    Sends arbitrary text payload to the REPL.
+
+require("send-to-repl").toggle_repl()
+    Toggles focus or opens the REPL split.
+
+require("send-to-repl").restart_repl()
+    Kills the active REPL and launches a fresh instance.
+
+require("send-to-repl").clear()
+    Sends Ctrl-L / clear screen signal to REPL.
+
+require("send-to-repl").interrupt()
+    Sends Ctrl-C / SIGINT signal to REPL.
+
+==============================================================================
+5. USER COMMANDS                                         *send-to-repl-commands*
+
+:SendToReplLine        - Send current line
+:SendToReplWord        - Send word under cursor
+:SendToReplParagraph   - Send paragraph
+:SendToReplVisual      - Send visual selection
+:SendToReplCell        - Send current code cell
+:SendToReplFile        - Send entire file
+:SendToReplBuffer      - Send entire buffer
+:SendToReplToggle      - Toggle REPL window
+:SendToReplRestart     - Restart REPL
+:SendToReplClear       - Clear REPL screen
+:SendToReplInterrupt   - Send Ctrl-C to REPL
+:SendToReplSend {text} - Send text to REPL
+
+==============================================================================
+6. SUGGESTED KEYMAPS                                      *send-to-repl-keymaps*
+
+>lua
+    local repl = require("send-to-repl")
+    vim.keymap.set("n", "<leader>l", repl.send_line, { desc = "Send line" })
+    vim.keymap.set("n", "<leader>p", repl.send_word, { desc = "Send word" })
+    vim.keymap.set("n", "<leader>c", repl.send_cell, { desc = "Send code cell" })
+    vim.keymap.set("n", "<leader><CR>", repl.send_paragraph, { desc = "Send paragraph" })
+    vim.keymap.set("v", "<leader><CR>", repl.send_visual, { desc = "Send selection" })
+    vim.keymap.set("n", "<leader>rf", repl.send_file, { desc = "Send file" })
+    vim.keymap.set("n", "<leader>rt", repl.toggle_repl, { desc = "Toggle REPL" })
+    vim.keymap.set("n", "<leader>rr", repl.restart_repl, { desc = "Restart REPL" })
+    vim.keymap.set("n", "gxc", repl.send_operator, { desc = "Send motion to REPL" })
+<
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
