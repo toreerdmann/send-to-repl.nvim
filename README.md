@@ -30,6 +30,12 @@ A Neovim plugin for sending code directly to an interactive terminal REPL. Desig
 ```lua
 {
   "toreerdmann/send-to-repl.nvim",
+  cmd = {
+    "SendToReplWith",
+    "SendToReplStart",
+    "SendToReplToggle",
+    "SendToReplRestart",
+  },
   keys = {
     { "<leader>l", function() require("send-to-repl").send_line() end, desc = "Send line to REPL" },
     { "<leader>p", function() require("send-to-repl").send_word() end, desc = "Send word to REPL" },
