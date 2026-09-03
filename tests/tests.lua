@@ -113,6 +113,91 @@ describe("send-to-repl tests", function()
 		assert.is_not_nil(commands["SendToReplClear"])
 		assert.is_not_nil(commands["SendToReplInterrupt"])
 		assert.is_not_nil(commands["SendToReplSend"])
+		assert.is_not_nil(commands["SendToReplWith"])
+		assert.is_not_nil(commands["SendToReplStart"])
+	end)
+
+	it("has_venv correctly detects environment presence and absence", function()
+		local temp_dir = vim.fn.tempname()
+		vim.fn.mkdir(temp_dir, "p")
+
+		-- In clean temp dir without venv or project
+		local detected, _ = plugin.has_venv(temp_dir)
+		assert.is_false(detected, "Should not detect venv in empty directory")
+
+		-- With .venv folder
+		local venv_path = temp_dir .. "/.venv"
+		vim.fn.mkdir(venv_path, "p")
+		detected, _ = plugin.has_venv(temp_dir)
+		assert.is_true(detected, "Should detect .venv folder")
+
+		-- Cleanup
+		vim.fn.delete(temp_dir, "rf")
+
+		-- With VIRTUAL_ENV env variable
+		local orig_venv = vim.env.VIRTUAL_ENV
+		local dummy_venv = vim.fn.tempname()
+		vim.fn.mkdir(dummy_venv, "p")
+		vim.env.VIRTUAL_ENV = dummy_venv
+
+		assert.is_true(plugin.has_venv(), "Should detect active VIRTUAL_ENV")
+
+		-- Restore env
+		vim.fn.delete(dummy_venv, "rf")
+		vim.env.VIRTUAL_ENV = orig_venv
+	end)
+
+	it("get_repl_command includes no_venv_packages when no venv is present", function()
+		plugin.setup({
+			repls = {
+				python = {
+					no_venv_packages = { "pandas" },
+				},
+			},
+		})
+
+		local temp_empty = vim.fn.tempname()
+		vim.fn.mkdir(temp_empty, "p")
+
+		-- Save and temporarily clear VIRTUAL_ENV if any
+		local orig_venv = vim.env.VIRTUAL_ENV
+		vim.env.VIRTUAL_ENV = nil
+
+		local cmd = plugin.get_repl_command({ ft = "python", silent = true })
+		assert.is_not_nil(cmd:match("%-%-with%s+ipython"), "Command should contain --with ipython")
+		assert.is_not_nil(cmd:match("%-%-with%s+pandas"), "Command should contain --with pandas")
+
+		-- Reset
+		vim.env.VIRTUAL_ENV = orig_venv
+		vim.fn.delete(temp_empty, "rf")
+		plugin.setup({
+			repls = {
+				python = {
+					no_venv_packages = {},
+				},
+			},
+		})
+	end)
+
+	it("get_repl_command supports on-demand packages", function()
+		local cmd = plugin.get_repl_command({ ft = "python", packages = "pandas, polars", silent = true })
+		assert.is_not_nil(cmd:match("%-%-with%s+pandas"), "Command should contain --with pandas")
+		assert.is_not_nil(cmd:match("%-%-with%s+polars"), "Command should contain --with polars")
+		assert.is_not_nil(cmd:match("%-%-with%s+ipython"), "Command should contain --with ipython")
+	end)
+
+	it("get_repl_command supports custom cmd override", function()
+		local custom = "uv run --with pandas,ipython -- ipython"
+		local cmd = plugin.get_repl_command({ cmd = custom })
+		assert.are.same(custom, cmd)
+	end)
+
+	it("start_repl launches and executes in REPL with custom packages", function()
+		helpers.create_test_buffer({ "print('custom_repl_ok')" })
+		plugin.start_repl({ packages = "requests", silent = true })
+		plugin.send_line()
+		local success = helpers.expect_repl_output("custom_repl_ok", 10000)
+		assert.is_true(success, "Failed to find 'custom_repl_ok' in REPL output")
 	end)
 end)
 

@@ -74,6 +74,11 @@ map("n", "<leader>rr", function()
 	repl.restart_repl()
 end, { desc = "Restart REPL" })
 
+map("n", "<leader>rw", function()
+	notify_key("<Space>rw", "Start REPL With Packages")
+	repl.start_repl_with()
+end, { desc = "Start REPL with packages" })
+
 map("n", "<leader>rc", function()
 	notify_key("<Space>rc", "Clear REPL Screen")
 	repl.clear()

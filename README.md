@@ -39,6 +39,7 @@ A Neovim plugin for sending code directly to an interactive terminal REPL. Desig
     { "<leader>rf", function() require("send-to-repl").send_file() end, desc = "Send file to REPL" },
     { "<leader>rt", function() require("send-to-repl").toggle_repl() end, desc = "Toggle REPL window" },
     { "<leader>rr", function() require("send-to-repl").restart_repl() end, desc = "Restart REPL" },
+    { "<leader>rw", function() require("send-to-repl").start_repl_with() end, desc = "Start REPL with packages" },
     { "gxc", function() require("send-to-repl").send_operator() end, desc = "Send motion to REPL" },
   },
   opts = {
@@ -71,6 +72,9 @@ require("send-to-repl").setup({
       cmd = "uv",
       args = { "run", "--with", "ipython", "--", "ipython", "--profile", "nvim" },
       ensure_ipython_profile = true,
+      -- Fallback packages when working in a directory without a venv/project:
+      no_venv_packages = { "pandas" }, -- e.g. automatically runs: uv run --with ipython --with pandas ...
+      detect_venv = true,             -- whether to auto-detect virtual environments
     },
     r = { cmd = "R", args = { "--no-save", "--quiet" } },
     julia = { cmd = "julia", args = {} },
@@ -84,9 +88,17 @@ require("send-to-repl").setup({
 })
 ```
 
-### Custom Python / Virtual Environment Example
+### Standalone Python / Virtual Environment Detection
 
-Commands and arguments can also be functions for dynamic resolution:
+When working in a folder without a virtual environment (no `.venv`, `venv`, active `$VIRTUAL_ENV`, or `pyproject.toml`), `send-to-repl.nvim` can automatically include fallback packages using `no_venv_packages = { "pandas" }`.
+
+You can also start or restart a REPL on-demand with specific packages or interactive prompt:
+
+- `:SendToReplWith pandas polars` &mdash; Starts or restarts REPL with `pandas` and `polars` (includes autocompletion for common libraries).
+- `:SendToReplWith` (or `<leader>rw`) &mdash; Prompts interactively for packages to run with.
+- `:SendToReplStart <command>` &mdash; Starts or restarts REPL with an exact custom command.
+
+Dynamic commands and arguments can also be functions:
 
 ```lua
 opts = {
@@ -120,10 +132,13 @@ opts = {
 | `require("send-to-repl").send_range(l1, l2)` | — | Send line range `[l1, l2]` |
 | `require("send-to-repl").send_operator()` | — | Operator motion function |
 | `require("send-to-repl").send(text)` | `:SendToReplSend <text>` | Send arbitrary text |
+| `require("send-to-repl").start_repl_with([pkgs])` | `:SendToReplWith [pkgs]` | Start/restart REPL with packages (prompts if empty) |
+| `require("send-to-repl").start_repl(opts)` | `:SendToReplStart [cmd]` | Start/restart REPL with custom packages or command |
 | `require("send-to-repl").toggle_repl()` | `:SendToReplToggle` | Toggle/Focus REPL window |
 | `require("send-to-repl").restart_repl()` | `:SendToReplRestart` | Restart the REPL process |
 | `require("send-to-repl").clear()` | `:SendToReplClear` | Send `<C-l>` / clear screen |
 | `require("send-to-repl").interrupt()` | `:SendToReplInterrupt` | Send `<C-c>` / SIGINT |
+| `require("send-to-repl").has_venv([dir])` | — | Check if virtual environment / project is detected |
 
 ---
 

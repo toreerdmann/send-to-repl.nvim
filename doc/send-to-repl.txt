@@ -40,6 +40,8 @@ Call setup with optional table: >lua
                 cmd = "uv",
                 args = { "run", "--with", "ipython", "--", "ipython", "--profile", "nvim" },
                 ensure_ipython_profile = true,
+                no_venv_packages = { "pandas" }, -- packages when outside a venv
+                detect_venv = true,
             },
             r = { cmd = "R", args = { "--no-save", "--quiet" } },
             julia = { cmd = "julia", args = {} },
@@ -78,6 +80,19 @@ require("send-to-repl").send_operator(type)
 require("send-to-repl").send(text)
     Sends arbitrary text payload to the REPL.
 
+require("send-to-repl").start_repl_with(packages)
+    Starts or restarts REPL with extra packages (e.g. "pandas, polars").
+    If called without arguments, prompts interactively.
+
+require("send-to-repl").start_repl(opts)
+    Starts or restarts REPL with options table:
+      - `packages`: string or list of packages
+      - `cmd`: full custom command string
+      - `prompt`: boolean to prompt interactively
+
+require("send-to-repl").has_venv(dir)
+    Checks whether a virtualenv or project is detected in `dir` or upward.
+
 require("send-to-repl").toggle_repl()
     Toggles focus or opens the REPL split.
 
@@ -93,18 +108,20 @@ require("send-to-repl").interrupt()
 ==============================================================================
 5. USER COMMANDS                                         *send-to-repl-commands*
 
-:SendToReplLine        - Send current line
-:SendToReplWord        - Send word under cursor
-:SendToReplParagraph   - Send paragraph
-:SendToReplVisual      - Send visual selection
-:SendToReplCell        - Send current code cell
-:SendToReplFile        - Send entire file
-:SendToReplBuffer      - Send entire buffer
-:SendToReplToggle      - Toggle REPL window
-:SendToReplRestart     - Restart REPL
-:SendToReplClear       - Clear REPL screen
-:SendToReplInterrupt   - Send Ctrl-C to REPL
-:SendToReplSend {text} - Send text to REPL
+:SendToReplLine          - Send current line
+:SendToReplWord          - Send word under cursor
+:SendToReplParagraph     - Send paragraph
+:SendToReplVisual        - Send visual selection
+:SendToReplCell          - Send current code cell
+:SendToReplFile          - Send entire file
+:SendToReplBuffer        - Send entire buffer
+:SendToReplWith {pkgs}   - Start/restart REPL with packages (or prompt if empty)
+:SendToReplStart {cmd}   - Start/restart REPL with custom command
+:SendToReplToggle        - Toggle REPL window
+:SendToReplRestart       - Restart REPL
+:SendToReplClear         - Clear REPL screen
+:SendToReplInterrupt     - Send Ctrl-C to REPL
+:SendToReplSend {text}   - Send text to REPL
 
 ==============================================================================
 6. SUGGESTED KEYMAPS                                      *send-to-repl-keymaps*
@@ -119,6 +136,7 @@ require("send-to-repl").interrupt()
     vim.keymap.set("n", "<leader>rf", repl.send_file, { desc = "Send file" })
     vim.keymap.set("n", "<leader>rt", repl.toggle_repl, { desc = "Toggle REPL" })
     vim.keymap.set("n", "<leader>rr", repl.restart_repl, { desc = "Restart REPL" })
+    vim.keymap.set("n", "<leader>rw", repl.start_repl_with, { desc = "Start REPL with packages" })
     vim.keymap.set("n", "gxc", repl.send_operator, { desc = "Send motion to REPL" })
 <
 

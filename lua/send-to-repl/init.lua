@@ -3,6 +3,11 @@
 ---@field args? (string|fun():string)[]|fun():string[] Command line arguments
 ---@field ensure_ipython_profile? boolean Whether to automatically configure ~/.ipython/profile_nvim
 ---@field prompt_pattern? string Custom regex pattern to match prompt on boot
+---@field no_venv_packages? string[]|string|fun():string[] Packages to include when no venv is detected
+---@field default_packages? string[]|string|fun():string[] Alias for no_venv_packages
+---@field no_venv_cmd? string|fun():string Custom command when no venv is detected
+---@field no_venv_args? (string|fun():string)[]|fun():string[] Custom args when no venv is detected
+---@field detect_venv? boolean Whether to automatically detect virtual environments (default: true)
 
 ---@class LayoutConfig
 ---@field split? "vertical"|"horizontal"|"tab" Direction of split (default: "vertical")
@@ -20,6 +25,9 @@ local M = {}
 
 local uv = vim.uv or vim.loop
 
+-- Session state
+M._last_custom_opts = nil
+
 -- [[ Default Configuration ]] --
 local config = {
 	layout = {
@@ -35,6 +43,8 @@ local config = {
 			cmd = "uv",
 			args = { "run", "--with", "ipython", "--", "ipython", "--profile", "nvim" },
 			ensure_ipython_profile = true,
+			no_venv_packages = {},
+			detect_venv = true,
 		},
 		-- Other Defaults
 		lua = { cmd = "lua", args = {} },
@@ -91,9 +101,140 @@ c.TerminalInteractiveShell.confirm_exit = False
 	end
 end
 
+-- [[ Helper: Detect Python Virtual Environment ]] --
+--- Check if a virtual environment or Python project is detected
+---@param dir? string Optional path to search from (defaults to current buffer or cwd)
+---@return boolean detected Whether a venv or project was found
+---@return string|nil path Path to the venv or project marker found
+function M.has_venv(dir)
+	-- 1. Check environment variable
+	local env_venv = vim.env.VIRTUAL_ENV or vim.env.CONDA_PREFIX
+	if env_venv and env_venv ~= "" and vim.fn.isdirectory(env_venv) == 1 then
+		return true, env_venv
+	end
+
+	-- 2. Determine search path (buffer directory or current working directory)
+	local search_path = dir
+	if not search_path or search_path == "" then
+		local buf_name = vim.api.nvim_buf_get_name(0)
+		if buf_name ~= "" then
+			search_path = vim.fs.dirname(buf_name)
+		else
+			search_path = uv.cwd() or vim.fn.getcwd()
+		end
+	end
+
+	search_path = vim.fs.normalize(search_path)
+	local home_dir = vim.fs.normalize("~")
+
+	-- Determine boundary (stop_dir) for upward search:
+	-- If inside a git repository, bound search to the git repository root.
+	-- Otherwise, stop before searching the home directory root.
+	local stop_dir
+	local git_roots = vim.fs.find(".git", { upward = true, path = search_path })
+	if git_roots and #git_roots > 0 then
+		local git_project_root = vim.fs.dirname(git_roots[1])
+		stop_dir = vim.fs.dirname(git_project_root)
+	elseif search_path ~= home_dir then
+		stop_dir = home_dir
+	end
+
+	-- 3. Search upward for virtual environment directories
+	local venv_patterns = { ".venv", "venv", ".conda" }
+	local found_dirs = vim.fs.find(venv_patterns, { upward = true, path = search_path, stop = stop_dir, type = "directory" })
+	if found_dirs and #found_dirs > 0 then
+		return true, found_dirs[1]
+	end
+
+	-- 4. Search upward for project definition files that uv/python treats as environments
+	local project_patterns = { "pyproject.toml", "uv.lock", "poetry.lock", "Pipfile" }
+	local found_files = vim.fs.find(project_patterns, { upward = true, path = search_path, stop = stop_dir, type = "file" })
+	if found_files and #found_files > 0 then
+		return true, found_files[1]
+	end
+
+	return false, nil
+end
+
+-- [[ Helper: Parse Package List ]] --
+local function parse_packages(pkgs)
+	if not pkgs then
+		return {}
+	end
+	if type(pkgs) == "function" then
+		pkgs = pkgs()
+	end
+	local list = {}
+	if type(pkgs) == "string" then
+		for p in pkgs:gmatch("[^,%s]+") do
+			table.insert(list, p)
+		end
+	elseif type(pkgs) == "table" then
+		for _, item in ipairs(pkgs) do
+			if type(item) == "string" then
+				for p in item:gmatch("[^,%s]+") do
+					table.insert(list, p)
+				end
+			end
+		end
+	end
+	return list
+end
+
+-- [[ Helper: Inject Packages into Runner Args ]] --
+local function inject_packages_into_args(cmd, args, pkgs)
+	if #pkgs == 0 then
+		return args
+	end
+
+	local new_args = vim.deepcopy(args)
+	local existing = {}
+
+	for i, a in ipairs(new_args) do
+		if a == "--with" and new_args[i + 1] then
+			for p in new_args[i + 1]:gmatch("[^,%s]+") do
+				existing[p] = true
+			end
+		elseif a:match("^%-%-with=(.+)$") then
+			local with_val = a:match("^%-%-with=(.+)$")
+			for p in with_val:gmatch("[^,%s]+") do
+				existing[p] = true
+			end
+		end
+	end
+
+	local dash_dash_idx = nil
+	for i, a in ipairs(new_args) do
+		if a == "--" then
+			dash_dash_idx = i
+			break
+		end
+	end
+
+	for _, p in ipairs(pkgs) do
+		if not existing[p] then
+			if dash_dash_idx then
+				table.insert(new_args, dash_dash_idx, "--with")
+				table.insert(new_args, dash_dash_idx + 1, p)
+				dash_dash_idx = dash_dash_idx + 2
+			elseif new_args[1] == "run" then
+				table.insert(new_args, 2, "--with")
+				table.insert(new_args, 3, p)
+			else
+				table.insert(new_args, "--with")
+				table.insert(new_args, p)
+			end
+			existing[p] = true
+		end
+	end
+
+	return new_args
+end
+
 -- [[ Helper: Construct Command ]] --
-local function get_repl_command()
-	local ft = vim.bo.filetype
+local function get_repl_command(opts)
+	opts = opts or {}
+	local ft = opts.ft or vim.bo.filetype
 	local def = config.repls and config.repls[ft]
 
 	-- 1. If no config for this filetype, fallback to default shell
@@ -106,32 +247,83 @@ local function get_repl_command()
 		ensure_ipython_profile()
 	end
 
-	-- 3. Construct command
+	-- 3. Check for explicit command override in opts
+	if opts.cmd then
+		if type(opts.cmd) == "function" then
+			return opts.cmd()
+		end
+		return tostring(opts.cmd)
+	end
+
+	-- 4. Check for Virtual Environment
+	local venv_detected = false
+	if def.detect_venv ~= false then
+		venv_detected = M.has_venv()
+	end
+
+	-- 5. Select cmd and args
 	local cmd = def.cmd
+	local args = opts.args or def.args or {}
+
+	if not venv_detected then
+		if def.no_venv_cmd then
+			cmd = def.no_venv_cmd
+		end
+		if def.no_venv_args and not opts.args then
+			args = def.no_venv_args
+		end
+	end
+
 	if type(cmd) == "function" then
 		cmd = cmd()
 	end
 
-	local args = def.args or {}
 	if type(args) == "function" then
 		args = args()
 	end
 
-	local cmd_parts = { tostring(cmd) }
+	-- 6. Collect packages
+	local pkgs = {}
+	if opts.packages then
+		pkgs = parse_packages(opts.packages)
+	elseif not venv_detected then
+		local fallback_pkgs = def.no_venv_packages or def.default_packages
+		if fallback_pkgs then
+			pkgs = parse_packages(fallback_pkgs)
+		end
+		if #pkgs > 0 and not opts.silent then
+			vim.notify("Starting REPL (no venv detected, with: " .. table.concat(pkgs, ", ") .. ")", vim.log.levels.INFO)
+		end
+	end
+
+	-- 7. Resolve args table
+	local resolved_args = {}
 	if type(args) == "table" then
 		for _, arg in ipairs(args) do
 			if type(arg) == "function" then
-				table.insert(cmd_parts, tostring(arg()))
+				table.insert(resolved_args, tostring(arg()))
 			else
-				table.insert(cmd_parts, tostring(arg))
+				table.insert(resolved_args, tostring(arg))
 			end
 		end
 	elseif type(args) == "string" and args ~= "" then
-		table.insert(cmd_parts, args)
+		resolved_args = vim.split(args, "%s+", { trimempty = true })
+	end
+
+	-- 8. Inject packages if any
+	if #pkgs > 0 then
+		resolved_args = inject_packages_into_args(cmd, resolved_args, pkgs)
+	end
+
+	local cmd_parts = { tostring(cmd) }
+	for _, arg in ipairs(resolved_args) do
+		table.insert(cmd_parts, arg)
 	end
 
 	return table.concat(cmd_parts, " ")
 end
+
+M.get_repl_command = get_repl_command
 
 -- [[ Helper: Find existing REPL buffer ]] --
 local function find_existing_repl()
@@ -190,16 +382,18 @@ local function open_repl_window(cmd)
 		vim.cmd("vsplit | wincmd L")
 	end
 
+	local orig_ft = vim.bo.filetype
 	vim.cmd("terminal " .. cmd)
 	local term_buf = vim.api.nvim_get_current_buf()
 	vim.b[term_buf].send_to_repl = true
-	vim.b[term_buf].send_to_repl_ft = vim.bo.filetype
+	vim.b[term_buf].send_to_repl_ft = orig_ft
+	vim.b[term_buf].send_to_repl_cmd = cmd
 
 	return term_buf
 end
 
 -- [[ Helper: Find or Create Terminal ]] --
-local function get_repl_job_id()
+local function get_repl_job_id(opts)
 	local term_buf, _ = find_existing_repl()
 
 	if term_buf and vim.api.nvim_buf_is_valid(term_buf) then
@@ -214,7 +408,7 @@ local function get_repl_job_id()
 
 	-- Create split and start terminal
 	local cur_win = vim.api.nvim_get_current_win()
-	local cmd = get_repl_command()
+	local cmd = get_repl_command(opts or M._last_custom_opts)
 	local new_term_buf = open_repl_window(cmd)
 
 	-- Auto-close logic on TermClose if clean exit
@@ -557,8 +751,55 @@ function M.toggle_repl()
 	end
 end
 
---- Restart the REPL process
-function M.restart_repl()
+--- Start or restart REPL with custom options
+---@param opts? { packages?: string|string[], cmd?: string, args?: string[]|string, prompt?: boolean, ft?: string, silent?: boolean, reset?: boolean }
+function M.start_repl(opts)
+	opts = opts or {}
+
+	if opts.reset then
+		M._last_custom_opts = nil
+		opts = {}
+	end
+
+	if opts.prompt then
+		local ft = opts.ft or vim.bo.filetype
+		local def = config.repls and config.repls[ft]
+		local default_val = ""
+		local fallback_pkgs = def and (def.no_venv_packages or def.default_packages)
+		if fallback_pkgs then
+			local parsed = parse_packages(fallback_pkgs)
+			default_val = table.concat(parsed, " ")
+		end
+
+		vim.ui.input({
+			prompt = "Extra packages for REPL (e.g. pandas, polars): ",
+			default = default_val,
+		}, function(input)
+			if input == nil then
+				return
+			end
+			local trimmed = vim.trim(input)
+			local new_opts = vim.tbl_extend("force", {}, opts)
+			new_opts.prompt = false
+			new_opts.packages = trimmed
+			M.start_repl(new_opts)
+		end)
+		return
+	end
+
+	M._last_custom_opts = opts
+
+	-- Notify user if packages or custom command are explicitly specified
+	if opts.packages and not opts.silent then
+		local p_list = parse_packages(opts.packages)
+		if #p_list > 0 then
+			vim.notify("Starting REPL with packages: " .. table.concat(p_list, ", "), vim.log.levels.INFO)
+		end
+	elseif opts.cmd and not opts.silent then
+		vim.notify("Starting REPL with command: " .. tostring(opts.cmd), vim.log.levels.INFO)
+	end
+
+	-- If REPL already exists, kill it so we can start fresh with new opts/command
 	local term_buf, _ = find_existing_repl()
 	if term_buf and vim.api.nvim_buf_is_valid(term_buf) then
 		local job_id = vim.b[term_buf].terminal_job_id
@@ -567,7 +808,29 @@ function M.restart_repl()
 		end
 		pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
 	end
-	get_repl_job_id()
+
+	local job_id, _, new_term_buf = get_repl_job_id(opts)
+	return job_id, new_term_buf
+end
+
+--- Start or restart REPL with extra packages (prompts if nil or empty)
+---@param packages? string|string[]
+---@param opts? table
+function M.start_repl_with(packages, opts)
+	opts = opts or {}
+	if not packages or packages == "" or (type(packages) == "table" and #packages == 0) then
+		opts.prompt = true
+		return M.start_repl(opts)
+	else
+		opts.packages = packages
+		return M.start_repl(opts)
+	end
+end
+
+--- Restart the REPL process (re-using last custom options if any)
+---@param opts? table
+function M.restart_repl(opts)
+	return M.start_repl(opts or M._last_custom_opts or {})
 end
 
 --- Send interrupt signal (Ctrl-C) to the REPL
@@ -600,6 +863,60 @@ local function register_commands()
 	cmd("SendToReplFile", function() M.send_file() end, { desc = "Send entire file to REPL" })
 	cmd("SendToReplToggle", function() M.toggle_repl() end, { desc = "Toggle/Focus REPL window" })
 	cmd("SendToReplRestart", function() M.restart_repl() end, { desc = "Restart REPL" })
+	cmd("SendToReplWith", function(opts)
+		local raw_input = vim.trim(opts.args or "")
+		if raw_input == "" then
+			M.start_repl({ prompt = true })
+		else
+			M.start_repl({ packages = raw_input })
+		end
+	end, {
+		nargs = "*",
+		complete = function(arg_lead)
+			local common = {
+				"pandas",
+				"numpy",
+				"polars",
+				"scipy",
+				"matplotlib",
+				"seaborn",
+				"scikit-learn",
+				"requests",
+				"torch",
+				"torchvision",
+				"duckdb",
+				"sympy",
+				"statsmodels",
+				"openpyxl",
+				"pyarrow",
+				"fastapi",
+				"httpx",
+				"rich",
+				"tqdm",
+				"jupyter",
+				"pydantic",
+				"altair",
+				"bokeh",
+				"plotly",
+			}
+			local matches = {}
+			for _, pkg in ipairs(common) do
+				if vim.startswith(pkg, arg_lead) then
+					table.insert(matches, pkg)
+				end
+			end
+			return matches
+		end,
+		desc = "Start or restart REPL with specified packages (e.g. :SendToReplWith pandas polars)",
+	})
+	cmd("SendToReplStart", function(opts)
+		local raw_cmd = vim.trim(opts.args or "")
+		if raw_cmd == "" then
+			M.start_repl()
+		else
+			M.start_repl({ cmd = raw_cmd })
+		end
+	end, { nargs = "*", desc = "Start or restart REPL with custom command" })
 	cmd("SendToReplClear", function() M.clear() end, { desc = "Clear REPL screen" })
 	cmd("SendToReplInterrupt", function() M.interrupt() end, { desc = "Send SIGINT (Ctrl-C) to REPL" })
 	cmd("SendToReplSend", function(opts)
