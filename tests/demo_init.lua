@@ -80,7 +80,12 @@ map("n", "<leader>rw", function()
 end, { desc = "Start REPL with packages" })
 
 map("n", "<leader>rc", function()
-	notify_key("<Space>rc", "Clear REPL Screen")
+	notify_key("<Space>rc", "Start REPL with Custom Command")
+	repl.start_repl_cmd()
+end, { desc = "Start REPL with custom command" })
+
+map("n", "<leader>rx", function()
+	notify_key("<Space>rx", "Clear REPL Screen")
 	repl.clear()
 end, { desc = "Clear REPL" })
 
@@ -111,6 +116,9 @@ if vim.fn.argc() == 0 then
 		"#   <Space>rf   -> Send entire buffer",
 		"#   <Space>rt   -> Toggle REPL focus",
 		"#   <Space>rr   -> Restart REPL",
+		"#   <Space>rw   -> Start REPL with packages",
+		"#   <Space>rc   -> Start REPL with custom command",
+		"#   <Space>rx   -> Clear REPL",
 		"#   gxc{motion} -> Send motion (e.g. gxcip, gxc2j)",
 		"#   <C-]>       -> Jump between code and REPL window",
 		"# ========================================================",

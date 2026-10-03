@@ -237,22 +237,44 @@ local function get_repl_command(opts)
 	local ft = opts.ft or vim.bo.filetype
 	local def = config.repls and config.repls[ft]
 
-	-- 1. If no config for this filetype, fallback to default shell
+	-- 1. Check for explicit command override in opts
+	if opts.cmd then
+		local explicit_cmd = opts.cmd
+		if type(explicit_cmd) == "function" then
+			explicit_cmd = explicit_cmd()
+		end
+		explicit_cmd = tostring(explicit_cmd)
+		if opts.args then
+			local resolved_args = {}
+			if type(opts.args) == "table" then
+				for _, arg in ipairs(opts.args) do
+					if type(arg) == "function" then
+						table.insert(resolved_args, tostring(arg()))
+					else
+						table.insert(resolved_args, tostring(arg))
+					end
+				end
+			elseif type(opts.args) == "string" and opts.args ~= "" then
+				resolved_args = vim.split(opts.args, "%s+", { trimempty = true })
+			end
+			if #resolved_args > 0 then
+				explicit_cmd = explicit_cmd .. " " .. table.concat(resolved_args, " ")
+			end
+		end
+		if explicit_cmd:match("ipython") then
+			ensure_ipython_profile()
+		end
+		return explicit_cmd
+	end
+
+	-- 2. If no config for this filetype, fallback to default shell
 	if not def then
 		return vim.o.shell
 	end
 
-	-- 2. Handle Side Effects
+	-- 3. Handle Side Effects
 	if def.ensure_ipython_profile then
 		ensure_ipython_profile()
-	end
-
-	-- 3. Check for explicit command override in opts
-	if opts.cmd then
-		if type(opts.cmd) == "function" then
-			return opts.cmd()
-		end
-		return tostring(opts.cmd)
 	end
 
 	-- 4. Check for Virtual Environment
@@ -520,8 +542,9 @@ local function send_text(text)
 
 	local ft = vim.bo.filetype
 	local is_configured = config.repls and config.repls[ft] ~= nil
+	local has_custom_cmd = M._last_custom_opts and M._last_custom_opts.cmd ~= nil
 
-	if is_new and not is_configured then
+	if is_new and not is_configured and not has_custom_cmd then
 		return
 	end
 
@@ -787,6 +810,71 @@ function M.start_repl(opts)
 		return
 	end
 
+	if opts.prompt_cmd then
+		local default_cmd = ""
+		if M._last_custom_opts and M._last_custom_opts.cmd then
+			local last_cmd = M._last_custom_opts.cmd
+			if type(last_cmd) == "function" then
+				last_cmd = last_cmd()
+			end
+			default_cmd = tostring(last_cmd)
+		else
+			-- Try to detect local virtual environment executables
+			local has_v, venv_path = M.has_venv()
+			if has_v and venv_path then
+				if vim.fn.isdirectory(venv_path) == 0 then
+					venv_path = vim.fs.dirname(venv_path)
+				end
+				local cwd = uv.cwd() or vim.fn.getcwd()
+				cwd = vim.fs.normalize(cwd)
+				local candidates = {
+					venv_path .. "/bin/ipython",
+					venv_path .. "/bin/python",
+					venv_path .. "/bin/ptpython",
+					venv_path .. "/Scripts/ipython.exe",
+					venv_path .. "/Scripts/python.exe",
+				}
+				for _, candidate in ipairs(candidates) do
+					if vim.fn.executable(candidate) == 1 then
+						local norm = vim.fs.normalize(candidate)
+						if vim.startswith(norm, cwd .. "/") then
+							default_cmd = norm:sub(#cwd + 2)
+						else
+							default_cmd = norm
+						end
+						if default_cmd:match("python$") or default_cmd:match("python%.exe$") then
+							default_cmd = default_cmd .. " -i"
+						end
+						break
+					end
+				end
+			end
+
+			if default_cmd == "" then
+				default_cmd = get_repl_command({ ft = opts.ft, silent = true })
+			end
+		end
+
+		vim.ui.input({
+			prompt = "Custom REPL command: ",
+			default = default_cmd,
+			completion = "shellcmd",
+		}, function(input)
+			if input == nil then
+				return
+			end
+			local trimmed = vim.trim(input)
+			if trimmed == "" then
+				return
+			end
+			local new_opts = vim.tbl_extend("force", {}, opts)
+			new_opts.prompt_cmd = false
+			new_opts.cmd = trimmed
+			M.start_repl(new_opts)
+		end)
+		return
+	end
+
 	M._last_custom_opts = opts
 
 	-- Notify user if packages or custom command are explicitly specified
@@ -796,7 +884,8 @@ function M.start_repl(opts)
 			vim.notify("Starting REPL with packages: " .. table.concat(p_list, ", "), vim.log.levels.INFO)
 		end
 	elseif opts.cmd and not opts.silent then
-		vim.notify("Starting REPL with command: " .. tostring(opts.cmd), vim.log.levels.INFO)
+		local cmd_str = type(opts.cmd) == "function" and opts.cmd() or opts.cmd
+		vim.notify("Starting REPL with command: " .. tostring(cmd_str), vim.log.levels.INFO)
 	end
 
 	-- If REPL already exists, kill it so we can start fresh with new opts/command
@@ -812,6 +901,21 @@ function M.start_repl(opts)
 	local job_id, _, new_term_buf = get_repl_job_id(opts)
 	return job_id, new_term_buf
 end
+
+--- Start or restart REPL with a custom command (prompts if nil or empty)
+---@param custom_cmd? string|fun():string
+---@param opts? table
+function M.start_repl_cmd(custom_cmd, opts)
+	opts = opts or {}
+	if not custom_cmd or custom_cmd == "" then
+		opts.prompt_cmd = true
+		return M.start_repl(opts)
+	else
+		opts.cmd = custom_cmd
+		return M.start_repl(opts)
+	end
+end
+M.start_repl_command = M.start_repl_cmd
 
 --- Start or restart REPL with extra packages (prompts if nil or empty)
 ---@param packages? string|string[]
@@ -909,14 +1013,83 @@ local function register_commands()
 		end,
 		desc = "Start or restart REPL with specified packages (e.g. :SendToReplWith pandas polars)",
 	})
-	cmd("SendToReplStart", function(opts)
+	local function complete_repl_cmd(arg_lead)
+		local suggestions = {}
+		local seen = {}
+
+		local function add(item)
+			if item and item ~= "" and not seen[item] then
+				seen[item] = true
+				table.insert(suggestions, item)
+			end
+		end
+
+		-- Check virtual environments for executables
+		local has_v, venv_path = M.has_venv()
+		if has_v and venv_path then
+			if vim.fn.isdirectory(venv_path) == 0 then
+				venv_path = vim.fs.dirname(venv_path)
+			end
+			local cwd = uv.cwd() or vim.fn.getcwd()
+			cwd = vim.fs.normalize(cwd)
+			local candidates = {
+				venv_path .. "/bin/ipython",
+				venv_path .. "/bin/python",
+				venv_path .. "/bin/ptpython",
+				venv_path .. "/Scripts/ipython.exe",
+				venv_path .. "/Scripts/python.exe",
+			}
+			for _, c in ipairs(candidates) do
+				if vim.fn.executable(c) == 1 then
+					local norm = vim.fs.normalize(c)
+					local rel = norm
+					if vim.startswith(norm, cwd .. "/") then
+						rel = norm:sub(#cwd + 2)
+					end
+					if vim.startswith(rel, arg_lead) then
+						add(rel)
+					end
+				end
+			end
+		end
+
+		-- Shell commands
+		for _, item in ipairs(vim.fn.getcompletion(arg_lead, "shellcmd")) do
+			add(item)
+		end
+
+		-- Files
+		for _, item in ipairs(vim.fn.getcompletion(arg_lead, "file")) do
+			add(item)
+		end
+
+		return suggestions
+	end
+
+	local function handle_custom_cmd(opts)
 		local raw_cmd = vim.trim(opts.args or "")
 		if raw_cmd == "" then
-			M.start_repl()
+			M.start_repl({ prompt_cmd = true })
 		else
 			M.start_repl({ cmd = raw_cmd })
 		end
-	end, { nargs = "*", desc = "Start or restart REPL with custom command" })
+	end
+
+	cmd("SendToReplCmd", handle_custom_cmd, {
+		nargs = "*",
+		complete = complete_repl_cmd,
+		desc = "Start or restart REPL with custom command (e.g. :SendToReplCmd .venv/bin/ipython)",
+	})
+	cmd("SendToReplCommand", handle_custom_cmd, {
+		nargs = "*",
+		complete = complete_repl_cmd,
+		desc = "Start or restart REPL with custom command (alias for :SendToReplCmd)",
+	})
+	cmd("SendToReplStart", handle_custom_cmd, {
+		nargs = "*",
+		complete = complete_repl_cmd,
+		desc = "Start or restart REPL with custom command (prompts if empty)",
+	})
 	cmd("SendToReplClear", function() M.clear() end, { desc = "Clear REPL screen" })
 	cmd("SendToReplInterrupt", function() M.interrupt() end, { desc = "Send SIGINT (Ctrl-C) to REPL" })
 	cmd("SendToReplSend", function(opts)

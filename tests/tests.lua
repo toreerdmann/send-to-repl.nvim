@@ -115,6 +115,8 @@ describe("send-to-repl tests", function()
 		assert.is_not_nil(commands["SendToReplSend"])
 		assert.is_not_nil(commands["SendToReplWith"])
 		assert.is_not_nil(commands["SendToReplStart"])
+		assert.is_not_nil(commands["SendToReplCmd"])
+		assert.is_not_nil(commands["SendToReplCommand"])
 	end)
 
 	it("has_venv correctly detects environment presence and absence", function()
@@ -190,6 +192,10 @@ describe("send-to-repl tests", function()
 		local custom = "uv run --with pandas,ipython -- ipython"
 		local cmd = plugin.get_repl_command({ cmd = custom })
 		assert.are.same(custom, cmd)
+
+		-- Also test that cmd override works for unconfigured filetypes
+		local custom_unconfigured = plugin.get_repl_command({ ft = "unknown_ft_xyz", cmd = ".venv/bin/ipython" })
+		assert.are.same(".venv/bin/ipython", custom_unconfigured)
 	end)
 
 	it("start_repl launches and executes in REPL with custom packages", function()
@@ -198,6 +204,14 @@ describe("send-to-repl tests", function()
 		plugin.send_line()
 		local success = helpers.expect_repl_output("custom_repl_ok", 10000)
 		assert.is_true(success, "Failed to find 'custom_repl_ok' in REPL output")
+	end)
+
+	it("start_repl_cmd launches and executes in REPL with custom startup command", function()
+		helpers.create_test_buffer({ "print('custom_cmd_ok')" })
+		plugin.start_repl_cmd("python3 -i", { silent = true })
+		plugin.send_line()
+		local success = helpers.expect_repl_output("custom_cmd_ok", 10000)
+		assert.is_true(success, "Failed to find 'custom_cmd_ok' in REPL output")
 	end)
 end)
 

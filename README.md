@@ -32,6 +32,8 @@ A Neovim plugin for sending code directly to an interactive terminal REPL. Desig
   "toreerdmann/send-to-repl.nvim",
   cmd = {
     "SendToReplWith",
+    "SendToReplCmd",
+    "SendToReplCommand",
     "SendToReplStart",
     "SendToReplToggle",
     "SendToReplRestart",
@@ -46,6 +48,7 @@ A Neovim plugin for sending code directly to an interactive terminal REPL. Desig
     { "<leader>rt", function() require("send-to-repl").toggle_repl() end, desc = "Toggle REPL window" },
     { "<leader>rr", function() require("send-to-repl").restart_repl() end, desc = "Restart REPL" },
     { "<leader>rw", function() require("send-to-repl").start_repl_with() end, desc = "Start REPL with packages" },
+    { "<leader>rc", function() require("send-to-repl").start_repl_cmd() end, desc = "Start REPL with custom command" },
     { "gxc", function() require("send-to-repl").send_operator() end, desc = "Send motion to REPL" },
   },
   opts = {
@@ -98,11 +101,12 @@ require("send-to-repl").setup({
 
 When working in a folder without a virtual environment (no `.venv`, `venv`, active `$VIRTUAL_ENV`, or `pyproject.toml`), `send-to-repl.nvim` can automatically include fallback packages using `no_venv_packages = { "pandas" }`.
 
-You can also start or restart a REPL on-demand with specific packages or interactive prompt:
+You can also start or restart a REPL on-demand with specific packages or an exact custom startup command:
 
+- `:SendToReplCmd <command>` (or `:SendToReplStart <command>`) &mdash; Starts or restarts REPL with an exact custom command (supports shell and path tab-completion, e.g. `:SendToReplCmd .venv/bin/ipython` or `:SendToReplCmd python3 -i`).
+- `:SendToReplCmd` (or `<leader>rc`) &mdash; Prompts interactively for a custom startup command, pre-filling a smart default (e.g. `.venv/bin/ipython` if detected in the project).
 - `:SendToReplWith pandas polars` &mdash; Starts or restarts REPL with `pandas` and `polars` (includes autocompletion for common libraries).
 - `:SendToReplWith` (or `<leader>rw`) &mdash; Prompts interactively for packages to run with.
-- `:SendToReplStart <command>` &mdash; Starts or restarts REPL with an exact custom command.
 
 Dynamic commands and arguments can also be functions:
 
@@ -138,8 +142,9 @@ opts = {
 | `require("send-to-repl").send_range(l1, l2)` | — | Send line range `[l1, l2]` |
 | `require("send-to-repl").send_operator()` | — | Operator motion function |
 | `require("send-to-repl").send(text)` | `:SendToReplSend <text>` | Send arbitrary text |
+| `require("send-to-repl").start_repl_cmd([cmd])` | `:SendToReplCmd [cmd]` / `:SendToReplStart [cmd]` | Start/restart REPL with custom command (prompts if empty) |
 | `require("send-to-repl").start_repl_with([pkgs])` | `:SendToReplWith [pkgs]` | Start/restart REPL with packages (prompts if empty) |
-| `require("send-to-repl").start_repl(opts)` | `:SendToReplStart [cmd]` | Start/restart REPL with custom packages or command |
+| `require("send-to-repl").start_repl(opts)` | — | Start/restart REPL with custom options table |
 | `require("send-to-repl").toggle_repl()` | `:SendToReplToggle` | Toggle/Focus REPL window |
 | `require("send-to-repl").restart_repl()` | `:SendToReplRestart` | Restart the REPL process |
 | `require("send-to-repl").clear()` | `:SendToReplClear` | Send `<C-l>` / clear screen |

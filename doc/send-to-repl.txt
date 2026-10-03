@@ -80,6 +80,10 @@ require("send-to-repl").send_operator(type)
 require("send-to-repl").send(text)
     Sends arbitrary text payload to the REPL.
 
+require("send-to-repl").start_repl_cmd(cmd)
+    Starts or restarts REPL with custom command (e.g. ".venv/bin/ipython").
+    If called without arguments, prompts interactively.
+
 require("send-to-repl").start_repl_with(packages)
     Starts or restarts REPL with extra packages (e.g. "pandas, polars").
     If called without arguments, prompts interactively.
@@ -88,7 +92,8 @@ require("send-to-repl").start_repl(opts)
     Starts or restarts REPL with options table:
       - `packages`: string or list of packages
       - `cmd`: full custom command string
-      - `prompt`: boolean to prompt interactively
+      - `prompt`: boolean to prompt interactively for packages
+      - `prompt_cmd`: boolean to prompt interactively for custom command
 
 require("send-to-repl").has_venv(dir)
     Checks whether a virtualenv or project is detected in `dir` or upward.
@@ -115,8 +120,10 @@ require("send-to-repl").interrupt()
 :SendToReplCell          - Send current code cell
 :SendToReplFile          - Send entire file
 :SendToReplBuffer        - Send entire buffer
+:SendToReplCmd {cmd}     - Start/restart REPL with custom command (or prompt if empty)
+:SendToReplCommand {cmd} - Alias for :SendToReplCmd
+:SendToReplStart {cmd}   - Start/restart REPL with custom command (or prompt if empty)
 :SendToReplWith {pkgs}   - Start/restart REPL with packages (or prompt if empty)
-:SendToReplStart {cmd}   - Start/restart REPL with custom command
 :SendToReplToggle        - Toggle REPL window
 :SendToReplRestart       - Restart REPL
 :SendToReplClear         - Clear REPL screen
@@ -137,6 +144,7 @@ require("send-to-repl").interrupt()
     vim.keymap.set("n", "<leader>rt", repl.toggle_repl, { desc = "Toggle REPL" })
     vim.keymap.set("n", "<leader>rr", repl.restart_repl, { desc = "Restart REPL" })
     vim.keymap.set("n", "<leader>rw", repl.start_repl_with, { desc = "Start REPL with packages" })
+    vim.keymap.set("n", "<leader>rc", repl.start_repl_cmd, { desc = "Start REPL with custom command" })
     vim.keymap.set("n", "gxc", repl.send_operator, { desc = "Send motion to REPL" })
 <
 
