@@ -119,6 +119,7 @@ if vim.fn.argc() == 0 then
 		"#   <Space>rw   -> Start REPL with packages",
 		"#   <Space>rc   -> Start REPL with custom command",
 		"#   <Space>rx   -> Clear REPL",
+		"#   <Space>ri   -> Interrupt REPL (Ctrl-C)",
 		"#   gxc{motion} -> Send motion (e.g. gxcip, gxc2j)",
 		"#   <C-]>       -> Jump between code and REPL window",
 		"# ========================================================",

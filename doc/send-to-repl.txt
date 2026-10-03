@@ -40,8 +40,10 @@ Call setup with optional table: >lua
                 cmd = "uv",
                 args = { "run", "--with", "ipython", "--", "ipython", "--profile", "nvim" },
                 ensure_ipython_profile = true,
-                no_venv_packages = { "pandas" }, -- packages when outside a venv
+                no_venv_packages = {},        -- packages when outside a venv (e.g. { "pandas" })
                 detect_venv = true,
+                -- no_venv_cmd = "python3",   -- optional fallback command outside venv
+                -- no_venv_args = { "-i" },    -- optional fallback args outside venv
             },
             r = { cmd = "R", args = { "--no-save", "--quiet" } },
             julia = { cmd = "julia", args = {} },
@@ -145,6 +147,8 @@ require("send-to-repl").interrupt()
     vim.keymap.set("n", "<leader>rr", repl.restart_repl, { desc = "Restart REPL" })
     vim.keymap.set("n", "<leader>rw", repl.start_repl_with, { desc = "Start REPL with packages" })
     vim.keymap.set("n", "<leader>rc", repl.start_repl_cmd, { desc = "Start REPL with custom command" })
+    vim.keymap.set("n", "<leader>rx", repl.clear, { desc = "Clear REPL screen" })
+    vim.keymap.set("n", "<leader>ri", repl.interrupt, { desc = "Interrupt REPL (Ctrl-C)" })
     vim.keymap.set("n", "gxc", repl.send_operator, { desc = "Send motion to REPL" })
 <
 

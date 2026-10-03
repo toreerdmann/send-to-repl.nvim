@@ -37,6 +37,9 @@ A Neovim plugin for sending code directly to an interactive terminal REPL. Desig
     "SendToReplStart",
     "SendToReplToggle",
     "SendToReplRestart",
+    "SendToReplClear",
+    "SendToReplInterrupt",
+    "SendToReplSend",
   },
   keys = {
     { "<leader>l", function() require("send-to-repl").send_line() end, desc = "Send line to REPL" },
@@ -49,6 +52,8 @@ A Neovim plugin for sending code directly to an interactive terminal REPL. Desig
     { "<leader>rr", function() require("send-to-repl").restart_repl() end, desc = "Restart REPL" },
     { "<leader>rw", function() require("send-to-repl").start_repl_with() end, desc = "Start REPL with packages" },
     { "<leader>rc", function() require("send-to-repl").start_repl_cmd() end, desc = "Start REPL with custom command" },
+    { "<leader>rx", function() require("send-to-repl").clear() end, desc = "Clear REPL screen" },
+    { "<leader>ri", function() require("send-to-repl").interrupt() end, desc = "Interrupt REPL (Ctrl-C)" },
     { "gxc", function() require("send-to-repl").send_operator() end, desc = "Send motion to REPL" },
   },
   opts = {
@@ -82,8 +87,11 @@ require("send-to-repl").setup({
       args = { "run", "--with", "ipython", "--", "ipython", "--profile", "nvim" },
       ensure_ipython_profile = true,
       -- Fallback packages when working in a directory without a venv/project:
-      no_venv_packages = { "pandas" }, -- e.g. automatically runs: uv run --with ipython --with pandas ...
+      no_venv_packages = {},          -- e.g. { "pandas" } (automatically runs: uv run --with ipython --with pandas ...)
       detect_venv = true,             -- whether to auto-detect virtual environments
+      -- Optional fallbacks when outside a venv:
+      -- no_venv_cmd = "python3",
+      -- no_venv_args = { "-i" },
     },
     r = { cmd = "R", args = { "--no-save", "--quiet" } },
     julia = { cmd = "julia", args = {} },
@@ -99,7 +107,7 @@ require("send-to-repl").setup({
 
 ### Standalone Python / Virtual Environment Detection
 
-When working in a folder without a virtual environment (no `.venv`, `venv`, active `$VIRTUAL_ENV`, or `pyproject.toml`), `send-to-repl.nvim` can automatically include fallback packages using `no_venv_packages = { "pandas" }`.
+When working in a folder without a virtual environment (no `.venv`, `venv`, active `$VIRTUAL_ENV`, or `pyproject.toml`), `send-to-repl.nvim` can automatically include fallback packages using `no_venv_packages = { "pandas" }`, or use a custom command via `no_venv_cmd` and `no_venv_args`.
 
 You can also start or restart a REPL on-demand with specific packages or an exact custom startup command:
 
@@ -142,7 +150,7 @@ opts = {
 | `require("send-to-repl").send_range(l1, l2)` | — | Send line range `[l1, l2]` |
 | `require("send-to-repl").send_operator()` | — | Operator motion function |
 | `require("send-to-repl").send(text)` | `:SendToReplSend <text>` | Send arbitrary text |
-| `require("send-to-repl").start_repl_cmd([cmd])` | `:SendToReplCmd [cmd]` / `:SendToReplStart [cmd]` | Start/restart REPL with custom command (prompts if empty) |
+| `require("send-to-repl").start_repl_cmd([cmd])` | `:SendToReplCmd [cmd]` / `:SendToReplCommand [cmd]` / `:SendToReplStart [cmd]` | Start/restart REPL with custom command (prompts if empty) |
 | `require("send-to-repl").start_repl_with([pkgs])` | `:SendToReplWith [pkgs]` | Start/restart REPL with packages (prompts if empty) |
 | `require("send-to-repl").start_repl(opts)` | — | Start/restart REPL with custom options table |
 | `require("send-to-repl").toggle_repl()` | `:SendToReplToggle` | Toggle/Focus REPL window |

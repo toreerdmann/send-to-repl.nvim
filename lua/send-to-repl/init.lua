@@ -51,7 +51,7 @@ local config = {
 		sh = { cmd = "bash", args = {} },
 		bash = { cmd = "bash", args = {} },
 		zsh = { cmd = "zsh", args = {} },
-		r = { cmd = "R", args = {} },
+		r = { cmd = "R", args = { "--no-save", "--quiet" } },
 		julia = { cmd = "julia", args = {} },
 		javascript = { cmd = "node", args = {} },
 		typescript = { cmd = "ts-node", args = {} },
